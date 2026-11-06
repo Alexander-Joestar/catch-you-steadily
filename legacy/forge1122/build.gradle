@@ -4,7 +4,7 @@ plugins {
 
 group = 'dev.catchyou'
 version = '0.1.0'
-archivesBaseName = 'catch-you-steadily-forge-1.12.2'
+base.archivesName = 'catch-you-steadily-forge-1.12.2'
 
 repositories {
     maven { url = 'https://nexus.gtnewhorizons.com/repository/public/' }
