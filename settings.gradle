@@ -1,0 +1,17 @@
+pluginManagement {
+    repositories {
+        maven { url = 'https://maven.fabricmc.net/' }
+        maven { url = 'https://maven.neoforged.net/releases' }
+        maven { url = 'https://maven.minecraftforge.net/' }
+        maven { url = 'https://nexus.gtnewhorizons.com/repository/public/' }
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+rootProject.name = 'catch-you-steadily'
+include 'common', 'fabric1201', 'fabric1211', 'forge1201', 'neoforge1211', 'forge1122'
+project(':fabric1201').projectDir = file('fabric/1.20.1')
+project(':fabric1211').projectDir = file('fabric/1.21.1')
+project(':forge1201').projectDir = file('forge/1.20.1')
+project(':neoforge1211').projectDir = file('neoforge/1.21.1')
+project(':forge1122').projectDir = file('legacy/forge1122')

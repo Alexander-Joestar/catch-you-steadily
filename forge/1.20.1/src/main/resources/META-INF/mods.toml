@@ -1,0 +1,8 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+[[mods]]
+modId="catch_you_steadily"
+version="0.1.0"
+displayName="Catch You Steadily"
+description='Server-side fall prediction framework'

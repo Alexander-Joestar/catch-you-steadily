@@ -1,0 +1,24 @@
+buildscript {
+    repositories {
+        maven { url = 'https://maven.minecraftforge.net' }
+        maven { url = 'https://repo.eclipse.org/content/groups/eclipse/' }
+        mavenCentral()
+    }
+    dependencies { classpath 'net.minecraftforge.gradle:ForgeGradle:2.3-SNAPSHOT' }
+}
+
+apply plugin: 'net.minecraftforge.gradle.forge'
+
+group = 'dev.catchyou'
+version = '0.1.0'
+archivesBaseName = 'catch-you-steadily-forge-1.7.10'
+
+minecraft {
+    version = '1.7.10-10.13.4.1614-1.7.10'
+    runDir = 'run'
+    mappings = 'stable_12'
+}
+
+sourceSets.main.java.srcDir rootProject.file('common/src/main/java')
+sourceCompatibility = 1.8
+targetCompatibility = 1.8

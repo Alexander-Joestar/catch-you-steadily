@@ -1,0 +1,23 @@
+plugins {
+    id 'net.minecraftforge.gradle' version '6.0.29'
+}
+
+version = '0.1.0'
+group = 'dev.catchyou'
+base.archivesName = 'catch-you-steadily-forge-1.20.1'
+
+minecraft {
+    mappings channel: 'official', version: '1.20.1'
+    copyIdeResources = true
+    runs {
+        server { workingDirectory project.file('run'); mods { catch_you_steadily { source sourceSets.main } } }
+    }
+}
+
+repositories { mavenCentral() }
+dependencies { minecraft 'net.minecraftforge:forge:1.20.1-47.3.0' }
+sourceSets.main.java.srcDir rootProject.file('common/src/main/java')
+sourceSets.main.java.srcDir rootProject.file('forge/src/main/java')
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+jar { manifest { attributes(['Specification-Title': 'Catch You Steadily', 'Specification-Version': '1', 'Implementation-Version': project.version]) } }
