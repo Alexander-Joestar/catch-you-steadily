@@ -20,4 +20,4 @@ minecraft {
     injectedTags.put('TAG_VERSION', project.version)
 }
 
-sourceSets.main.java.srcDir rootProject.file('common/src/main/java')
+sourceSets.main.java.srcDir rootProject.file('../common/src/main/java')
