@@ -1,0 +1,23 @@
+plugins {
+    id 'com.gtnewhorizons.retrofuturagradle' version '2.0.2'
+}
+
+group = 'dev.catchyou'
+version = '0.1.0'
+base.archivesName = 'catch-you-steadily-forge-1.12.2'
+
+repositories {
+    maven { url = 'https://nexus.gtnewhorizons.com/repository/public/' }
+    mavenCentral()
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(8)
+}
+
+minecraft {
+    mcVersion.set('1.12.2')
+    injectedTags.put('TAG_VERSION', project.version)
+}
+
+sourceSets.main.java.srcDir rootProject.file('../common/src/main/java')

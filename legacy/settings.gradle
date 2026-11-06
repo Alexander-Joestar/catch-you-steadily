@@ -1,0 +1,12 @@
+pluginManagement {
+    repositories {
+        maven { url = 'https://nexus.gtnewhorizons.com/repository/public/' }
+        maven { url = 'https://maven.minecraftforge.net/' }
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+rootProject.name = 'catch-you-steadily-legacy'
+include 'forge1122', 'forge1710'
+project(':forge1122').projectDir = file('forge1122')
+project(':forge1710').projectDir = file('forge1710')
