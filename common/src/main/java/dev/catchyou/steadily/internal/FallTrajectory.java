@@ -2,7 +2,7 @@ package dev.catchyou.steadily.internal;
 
 public final class FallTrajectory {
     private static final double GRAVITY = 0.08;
-    private static final double HORIZONTAL_DRAG = 0.91;
+    private static final double HORIZONTAL_RETENTION = 0.98;
     private static final double VERTICAL_DRAG = 0.98;
     private static final int MAX_TICKS = 100;
     private static final double DAMAGE_DISTANCE = 3.0;
@@ -25,9 +25,9 @@ public final class FallTrajectory {
                 return fallDistance + startY - y > DAMAGE_DISTANCE
                         ? new Result(x, y, z, tick) : Result.none();
             }
-            velocityX = movement.x == velocityX ? velocityX * HORIZONTAL_DRAG : 0;
+            velocityX = movement.x == velocityX ? velocityX * HORIZONTAL_RETENTION : 0;
             velocityY = (velocityY - GRAVITY) * VERTICAL_DRAG;
-            velocityZ = movement.z == velocityZ ? velocityZ * HORIZONTAL_DRAG : 0;
+            velocityZ = movement.z == velocityZ ? velocityZ * HORIZONTAL_RETENTION : 0;
         }
         return Result.none();
     }
@@ -39,17 +39,18 @@ public final class FallTrajectory {
             return false;
         }
         double gap = y - topY;
-        double halfWidth = width / 2;
-        if (gap < 0 || gap > 2.0 || gap > -velocityY * 2
-                || x + halfWidth <= minX || x - halfWidth >= maxX
-                || z + halfWidth <= minZ || z - halfWidth >= maxZ) {
+        double halfWidth = width / 2.0;
+        double maxFallSpan = Math.max(2.5, -velocityY * 1.5);
+        if (gap < -0.2 || gap > maxFallSpan) {
             return false;
         }
-        double ticksToContact = gap / -velocityY;
-        double projectedX = x + velocityX * ticksToContact;
-        double projectedZ = z + velocityZ * ticksToContact;
-        return projectedX + halfWidth > minX && projectedX - halfWidth < maxX
-                && projectedZ + halfWidth > minZ && projectedZ - halfWidth < maxZ;
+        double contactFraction = gap <= 0 ? 0.0 : Math.min(1.0, gap / -velocityY);
+        double contactX = x + velocityX * contactFraction;
+        double contactZ = z + velocityZ * contactFraction;
+        double margin = 0.3;
+        boolean overlapX = (contactX + halfWidth > minX - margin) && (contactX - halfWidth < maxX + margin);
+        boolean overlapZ = (contactZ + halfWidth > minZ - margin) && (contactZ - halfWidth < maxZ + margin);
+        return overlapX && overlapZ;
     }
 
     public interface CollisionProbe {

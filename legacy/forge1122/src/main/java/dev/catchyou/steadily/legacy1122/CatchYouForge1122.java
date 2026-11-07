@@ -2,6 +2,7 @@ package dev.catchyou.steadily.legacy1122;
 
 import dev.catchyou.steadily.internal.FallTrajectory;
 import dev.catchyou.steadily.internal.RescueConfig;
+import dev.catchyou.steadily.internal.RescueFormation;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -37,10 +38,9 @@ public final class CatchYouForge1122 {
     private static final Logger LOGGER = LogManager.getLogger("catch-you-steadily");
     private static final int PREDICTION_INTERVAL = 5;
     private static final int GOAL_REPATH_INTERVAL = 10;
-    private static final double FOLLOW_SPEED = 1.2D;
-    private static final double RESCAN_HORIZONTAL_DISTANCE_SQUARED = 9.0D;
+    private static final double FOLLOW_SPEED = 1.45D;
+    private static final double RESCAN_HORIZONTAL_DISTANCE_SQUARED = 4.0D;
     private static final double RESCAN_VERTICAL_DISTANCE = 2.0D;
-    private static final double LANDING_CONTACT_DISTANCE_SQUARED = 2.25D;
     private RescueConfig config;
     private final FallTrajectory trajectory = new FallTrajectory();
     private final Map<UUID, Session> sessions = new HashMap<>();
@@ -97,8 +97,9 @@ public final class CatchYouForge1122 {
             }
             if (session == null) {
                 MotionSample sample = previousPositions.get(playerId);
-                if (player.onGround || player.fallDistance < 0.25F || velocity.y >= 0.0D
-                        || tick - sample.lastPredictionTick < PREDICTION_INTERVAL) {
+                int interval = (velocity.x * velocity.x + velocity.z * velocity.z > 0.001D) ? 2 : PREDICTION_INTERVAL;
+                if (player.onGround || player.fallDistance < 0.1F || velocity.y >= 0.0D
+                        || tick - sample.lastPredictionTick < interval) {
                     continue;
                 }
                 sample.lastPredictionTick = tick;
@@ -192,7 +193,8 @@ public final class CatchYouForge1122 {
         if (velocity.y < 0.0D && tryMount(session, velocity)) {
             return true;
         }
-        if (velocity.y < 0.0D && tick - session.lastPredictionTick >= PREDICTION_INTERVAL) {
+        int interval = (velocity.x * velocity.x + velocity.z * velocity.z > 0.001D) ? 2 : PREDICTION_INTERVAL;
+        if (velocity.y < 0.0D && tick - session.lastPredictionTick >= interval) {
             session.lastPredictionTick = tick;
             FallTrajectory.Result landing = predict(player, velocity);
             if (!landing.exists()) {
@@ -269,11 +271,6 @@ public final class CatchYouForge1122 {
                     || !isLoaded(mob, session.world)) {
                 continue;
             }
-            double dx = mob.posX - session.landing.x;
-            double dz = mob.posZ - session.landing.z;
-            if (dx * dx + dz * dz > LANDING_CONTACT_DISTANCE_SQUARED) {
-                continue;
-            }
             AxisAlignedBB mobBox = mob.getEntityBoundingBox();
             if (!trajectory.reachesSeat(player.posX, player.posY, player.posZ, player.width,
                     velocity.x, velocity.y, velocity.z, mobBox.minX, mobBox.maxX, mobBox.minZ, mobBox.maxZ,
@@ -322,12 +319,12 @@ public final class CatchYouForge1122 {
                 continue;
             }
             FollowGoal goal = new FollowGoal(mob, session);
-            goal.setTarget(session.landing.x, session.landing.z);
             if (goal.repath()) {
                 mob.tasks.addTask(-1, goal);
                 session.followers.add(goal);
             }
         }
+        updateGoalTargets(session);
         return true;
     }
 
@@ -345,8 +342,12 @@ public final class CatchYouForge1122 {
     }
 
     private void updateGoalTargets(Session session) {
-        for (FollowGoal goal : session.followers) {
-            goal.setTarget(session.landing.x, session.landing.z);
+        int total = session.followers.size();
+        for (int i = 0; i < total; i++) {
+            FollowGoal goal = session.followers.get(i);
+            RescueFormation.TargetPoint target = RescueFormation.computeTarget(
+                    session.landing.x, session.landing.z, i, total);
+            goal.setTarget(target.x, target.z);
         }
     }
 
@@ -452,7 +453,7 @@ public final class CatchYouForge1122 {
                 repathDelay = GOAL_REPATH_INTERVAL;
                 double dx = targetX - lastPathX;
                 double dz = targetZ - lastPathZ;
-                if (Double.isNaN(lastPathX) || dx * dx + dz * dz >= 4.0D
+                if (Double.isNaN(lastPathX) || dx * dx + dz * dz >= 0.64D
                         || (mob.getNavigator().noPath() && distanceToTargetSquared() > 2.25D)) {
                     repath();
                 }
@@ -467,6 +468,11 @@ public final class CatchYouForge1122 {
         private void setTarget(double x, double z) {
             targetX = x;
             targetZ = z;
+            double dx = targetX - lastPathX;
+            double dz = targetZ - lastPathZ;
+            if (!Double.isNaN(lastPathX) && (dx * dx + dz * dz >= 0.64D) && repathDelay > 2) {
+                repathDelay = 0;
+            }
         }
 
         private boolean repath() {

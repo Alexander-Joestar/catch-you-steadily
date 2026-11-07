@@ -2,6 +2,7 @@ package dev.catchyou.steadily.neoforge;
 
 import dev.catchyou.steadily.internal.FallTrajectory;
 import dev.catchyou.steadily.internal.RescueConfig;
+import dev.catchyou.steadily.internal.RescueFormation;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -22,10 +23,9 @@ final class NeoForgeFallRescue {
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("catch-you-steadily");
     private static final int PREDICTION_INTERVAL = 5;
     private static final int GOAL_REPATH_INTERVAL = 10;
-    private static final double FOLLOW_SPEED = 1.2;
-    private static final double RESCAN_HORIZONTAL_DISTANCE_SQUARED = 9;
+    private static final double FOLLOW_SPEED = 1.45;
+    private static final double RESCAN_HORIZONTAL_DISTANCE_SQUARED = 4.0;
     private static final double RESCAN_VERTICAL_DISTANCE = 2;
-    private static final double LANDING_CONTACT_DISTANCE_SQUARED = 2.25;
     private final RescueConfig config;
     private final FallTrajectory trajectory = new FallTrajectory();
     private final Map<UUID, Session> sessions = new HashMap<>();
@@ -53,10 +53,11 @@ final class NeoForgeFallRescue {
                     previous == null ? tick - PREDICTION_INTERVAL : previous.lastPredictionTick);
             Vec3 observed = current.subtract(previousPosition);
             Vec3 velocity = observed.lengthSqr() > 1.0E-8 ? observed : player.getDeltaMovement();
+            int interval = (velocity.x * velocity.x + velocity.z * velocity.z > 0.001) ? 2 : PREDICTION_INTERVAL;
             try {
                 if (session == null) {
-                    if (player.onGround() || player.fallDistance < 0.25F || velocity.y >= 0
-                            || tick - sample.lastPredictionTick < PREDICTION_INTERVAL) {
+                    if (player.onGround() || player.fallDistance < 0.1F || velocity.y >= 0
+                            || tick - sample.lastPredictionTick < interval) {
                         continue;
                     }
                     sample.lastPredictionTick = tick;
@@ -170,7 +171,8 @@ final class NeoForgeFallRescue {
         if (velocity.y < 0 && tryMount(session, velocity)) {
             return true;
         }
-        if (velocity.y < 0 && tick - session.lastPredictionTick >= PREDICTION_INTERVAL) {
+        int interval = (velocity.x * velocity.x + velocity.z * velocity.z > 0.001) ? 2 : PREDICTION_INTERVAL;
+        if (velocity.y < 0 && tick - session.lastPredictionTick >= interval) {
             session.lastPredictionTick = tick;
             FallTrajectory.Result landing = predict(player, velocity);
             if (!landing.exists()) {
@@ -219,11 +221,6 @@ final class NeoForgeFallRescue {
         for (FollowGoal followGoal : session.followers) {
             Mob mob = followGoal.mob;
             if (!mob.isAlive() || mob.isRemoved() || mob.level() != session.level) {
-                continue;
-            }
-            double distanceX = mob.getX() - session.landing.x;
-            double distanceZ = mob.getZ() - session.landing.z;
-            if (distanceX * distanceX + distanceZ * distanceZ > LANDING_CONTACT_DISTANCE_SQUARED) {
                 continue;
             }
             AABB mobBox = mob.getBoundingBox();
@@ -275,12 +272,12 @@ final class NeoForgeFallRescue {
                 continue;
             }
             FollowGoal goal = new FollowGoal(mob, session);
-            goal.setTarget(session.landing.x, session.landing.z);
             if (goal.repath()) {
                 mob.goalSelector.addGoal(-1, goal);
                 session.followers.add(goal);
             }
         }
+        updateGoalTargets(session);
         return true;
     }
 
@@ -294,8 +291,12 @@ final class NeoForgeFallRescue {
     }
 
     private void updateGoalTargets(Session session) {
-        for (FollowGoal goal : session.followers) {
-            goal.setTarget(session.landing.x, session.landing.z);
+        int total = session.followers.size();
+        for (int i = 0; i < total; i++) {
+            FollowGoal goal = session.followers.get(i);
+            RescueFormation.TargetPoint target = RescueFormation.computeTarget(
+                    session.landing.x, session.landing.z, i, total);
+            goal.setTarget(target.x, target.z);
         }
     }
 
@@ -393,7 +394,7 @@ final class NeoForgeFallRescue {
                 repathDelay = GOAL_REPATH_INTERVAL;
                 double deltaX = targetX - lastPathX;
                 double deltaZ = targetZ - lastPathZ;
-                if (Double.isNaN(lastPathX) || deltaX * deltaX + deltaZ * deltaZ >= 4
+                if (Double.isNaN(lastPathX) || deltaX * deltaX + deltaZ * deltaZ >= 0.64
                         || (mob.getNavigation().isDone() && mob.distanceToSqr(targetX, mob.getY(), targetZ) > 2.25)) {
                     repath();
                 }
@@ -408,6 +409,11 @@ final class NeoForgeFallRescue {
         private void setTarget(double x, double z) {
             targetX = x;
             targetZ = z;
+            double deltaX = targetX - lastPathX;
+            double deltaZ = targetZ - lastPathZ;
+            if (!Double.isNaN(lastPathX) && (deltaX * deltaX + deltaZ * deltaZ >= 0.64) && repathDelay > 2) {
+                repathDelay = 0;
+            }
         }
 
         private boolean repath() {
