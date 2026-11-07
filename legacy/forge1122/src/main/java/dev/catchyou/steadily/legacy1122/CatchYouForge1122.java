@@ -2,8 +2,8 @@ package dev.catchyou.steadily.legacy1122;
 
 import dev.catchyou.steadily.internal.FallTrajectory;
 import dev.catchyou.steadily.internal.RescueConfig;
+import java.io.File;
 import java.io.IOException;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -22,7 +22,9 @@ import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.entity.living.LivingFallEvent;
 import net.minecraftforge.fml.common.FMLCommonHandler;
+import net.minecraftforge.fml.common.Loader;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.common.event.FMLServerStartingEvent;
 import net.minecraftforge.fml.common.event.FMLServerStoppingEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
@@ -39,7 +41,7 @@ public final class CatchYouForge1122 {
     private static final double RESCAN_HORIZONTAL_DISTANCE_SQUARED = 9.0D;
     private static final double RESCAN_VERTICAL_DISTANCE = 2.0D;
     private static final double LANDING_CONTACT_DISTANCE_SQUARED = 2.25D;
-    private final RescueConfig config;
+    private RescueConfig config;
     private final FallTrajectory trajectory = new FallTrajectory();
     private final Map<UUID, Session> sessions = new HashMap<>();
     private final Map<UUID, MotionSample> previousPositions = new HashMap<>();
@@ -47,12 +49,22 @@ public final class CatchYouForge1122 {
 
     public CatchYouForge1122() {
         try {
-            config = RescueConfig.load(Paths.get("config", "catch-you-steadily.properties"));
-        } catch (IOException | IllegalArgumentException exception) {
+            LegacyConfig.validate(new File(Loader.instance().getConfigDir(), "catch-you-steadily.cfg"));
+        } catch (IOException | RuntimeException exception) {
             LOGGER.error("Could not load the rescue configuration", exception);
             throw new IllegalStateException("Could not initialize rescue gameplay", exception);
         }
         MinecraftForge.EVENT_BUS.register(this);
+    }
+
+    @Mod.EventHandler
+    public void onServerStarting(FMLServerStartingEvent event) {
+        try {
+            config = LegacyConfig.snapshot();
+        } catch (RuntimeException exception) {
+            LOGGER.error("Could not initialize rescue gameplay", exception);
+            throw exception;
+        }
     }
 
     @SubscribeEvent

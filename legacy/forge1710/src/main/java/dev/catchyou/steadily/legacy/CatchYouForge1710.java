@@ -1,6 +1,7 @@
 package dev.catchyou.steadily.legacy;
 
 import cpw.mods.fml.common.FMLCommonHandler;
+import cpw.mods.fml.common.Loader;
 import cpw.mods.fml.common.Mod;
 import cpw.mods.fml.common.event.FMLServerStartingEvent;
 import cpw.mods.fml.common.event.FMLServerStoppingEvent;
@@ -8,8 +9,8 @@ import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import dev.catchyou.steadily.internal.FallTrajectory;
 import dev.catchyou.steadily.internal.RescueConfig;
+import java.io.File;
 import java.io.IOException;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -49,8 +50,8 @@ public final class CatchYouForge1710 {
     @Mod.EventHandler
     public void serverStarting(FMLServerStartingEvent event) {
         try {
-            config = RescueConfig.load(Paths.get("config", "catch-you-steadily.properties"));
-        } catch (IOException | IllegalArgumentException exception) {
+            config = LegacyConfig.load(new File(Loader.instance().getConfigDir(), "catch-you-steadily.cfg"));
+        } catch (IOException | RuntimeException exception) {
             LOGGER.error("Could not load the rescue configuration", exception);
             throw new IllegalStateException("Could not initialize rescue gameplay", exception);
         }
