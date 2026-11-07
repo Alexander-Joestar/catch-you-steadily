@@ -6,6 +6,10 @@ group = 'dev.catchyou'
 version = '0.1.0'
 base.archivesName = 'catch-you-steadily-fabric-1.20.1'
 
+loom {
+    accessWidenerPath = file('src/main/resources/catch-you-steadily.accesswidener')
+}
+
 repositories { mavenCentral() }
 
 dependencies {
@@ -18,4 +22,8 @@ dependencies {
 sourceSets.main.java.srcDir rootProject.file('common/src/main/java')
 sourceSets.main.java.srcDir rootProject.file('fabric/src/main/java')
 
-java { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
+java { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
+
+configurations.named('compileClasspath') {
+    attributes.attribute(org.gradle.api.attributes.java.TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, 17)
+}

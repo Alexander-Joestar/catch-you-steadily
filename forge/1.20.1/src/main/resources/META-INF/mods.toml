@@ -5,4 +5,16 @@ license="MIT"
 modId="catch_you_steadily"
 version="0.1.0"
 displayName="Catch You Steadily"
-description='Server-side fall prediction framework'
+description='Server-side fall rescue and temporary mob attraction'
+[[dependencies.catch_you_steadily]]
+modId="forge"
+mandatory=true
+versionRange="[47,)"
+ordering="NONE"
+side="SERVER"
+[[dependencies.catch_you_steadily]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.20.1,1.20.2)"
+ordering="NONE"
+side="SERVER"
