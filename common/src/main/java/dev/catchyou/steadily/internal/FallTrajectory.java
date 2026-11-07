@@ -34,23 +34,46 @@ public final class FallTrajectory {
 
     public boolean reachesSeat(double x, double y, double z, double width,
                                double velocityX, double velocityY, double velocityZ,
-                               double minX, double maxX, double minZ, double maxZ, double topY) {
-        if (velocityY >= 0) {
-            return false;
-        }
+                               double minX, double maxX, double minZ, double maxZ, double bottomY, double topY,
+                               double mobVelocityX, double mobVelocityY, double mobVelocityZ,
+                               CollisionProbe collisionProbe, CollisionProbe mobCollisionProbe) {
         double gap = y - topY;
-        double halfWidth = width / 2.0;
-        double maxFallSpan = Math.max(2.5, -velocityY * 1.5);
-        if (gap < -0.2 || gap > maxFallSpan) {
+        if (velocityY >= 0 || gap < 0 || gap > -velocityY + Math.abs(mobVelocityY)) {
             return false;
         }
-        double contactFraction = gap <= 0 ? 0.0 : Math.min(1.0, gap / -velocityY);
-        double contactX = x + velocityX * contactFraction;
-        double contactZ = z + velocityZ * contactFraction;
-        double margin = 0.3;
-        boolean overlapX = (contactX + halfWidth > minX - margin) && (contactX - halfWidth < maxX + margin);
-        boolean overlapZ = (contactZ + halfWidth > minZ - margin) && (contactZ - halfWidth < maxZ + margin);
-        return overlapX && overlapZ;
+        Movement mobMovement = mobCollisionProbe.move((minX + maxX) / 2.0, bottomY, (minZ + maxZ) / 2.0,
+                mobVelocityX, mobVelocityY, mobVelocityZ);
+        double relativeY = velocityY - mobMovement.y;
+        if (mobMovement.liquid || relativeY >= 0 || gap > -relativeY) {
+            return false;
+        }
+        double fraction = gap / -relativeY;
+        double dx = velocityX * fraction;
+        double dy = velocityY * fraction;
+        double dz = velocityZ * fraction;
+        double contactX = x + dx - mobMovement.x * fraction;
+        double contactZ = z + dz - mobMovement.z * fraction;
+        double halfWidth = width / 2.0;
+        if (contactX + halfWidth <= minX || contactX - halfWidth >= maxX
+                || contactZ + halfWidth <= minZ || contactZ - halfWidth >= maxZ) {
+            return false;
+        }
+        Movement movement = collisionProbe.move(x, y, z, dx, dy, dz);
+        return !movement.liquid && Math.abs(movement.x - dx) < 1.0E-7
+                && Math.abs(movement.y - dy) < 1.0E-7 && Math.abs(movement.z - dz) < 1.0E-7;
+    }
+
+    public boolean touchesSeat(double x, double y, double z, double width, double height,
+                               double minX, double maxX, double minZ, double maxZ, double topY,
+                               CollisionProbe collisionProbe) {
+        double halfWidth = width / 2.0;
+        if (y > topY || y + height <= topY || x + halfWidth <= minX || x - halfWidth >= maxX
+                || z + halfWidth <= minZ || z - halfWidth >= maxZ) {
+            return false;
+        }
+        double dy = topY - y;
+        Movement movement = collisionProbe.move(x, y, z, 0, dy, 0);
+        return !movement.liquid && Math.abs(movement.y - dy) < 1.0E-7;
     }
 
     public interface CollisionProbe {

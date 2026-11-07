@@ -1,21 +1,39 @@
 package dev.catchyou.steadily.internal;
 
 public final class RescueFormation {
-    private static final double DEFAULT_PERIMETER_RADIUS = 0.9;
-
     private RescueFormation() {
     }
 
     public static TargetPoint computeTarget(double targetX, double targetZ,
-                                            int followerIndex, int totalFollowers) {
-        if (totalFollowers <= 1 || followerIndex <= 0) {
+                                            int followerIndex, double spacing) {
+        if (followerIndex == 0) {
             return new TargetPoint(targetX, targetZ);
         }
-        int perimeterCount = totalFollowers - 1;
-        double angle = (2.0 * Math.PI * (followerIndex - 1)) / perimeterCount;
-        double offsetX = DEFAULT_PERIMETER_RADIUS * Math.cos(angle);
-        double offsetZ = DEFAULT_PERIMETER_RADIUS * Math.sin(angle);
-        return new TargetPoint(targetX + offsetX, targetZ + offsetZ);
+        int ring = (int)Math.ceil((Math.sqrt(followerIndex + 1.0) - 1.0) / 2.0);
+        int offset = followerIndex - (2 * ring - 1) * (2 * ring - 1);
+        int side = offset / (2 * ring);
+        int position = offset % (2 * ring);
+        int x;
+        int z;
+        switch (side) {
+            case 0:
+                x = ring;
+                z = -ring + position;
+                break;
+            case 1:
+                x = ring - position;
+                z = ring;
+                break;
+            case 2:
+                x = -ring;
+                z = ring - position;
+                break;
+            default:
+                x = -ring + position;
+                z = -ring;
+                break;
+        }
+        return new TargetPoint(targetX + x * spacing, targetZ + z * spacing);
     }
 
     public static final class TargetPoint {
