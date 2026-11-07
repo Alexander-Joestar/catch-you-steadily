@@ -130,7 +130,9 @@ final class NeoForgeFallRescue {
             return null;
         }
         Session session = new Session(player, player.serverLevel(), landing);
-        rescan(session);
+        if (!rescan(session)) {
+            return null;
+        }
         LOGGER.info("Fall rescue started for {} with {} navigable mobs", player.getGameProfile().getName(),
                 session.followers.size());
         return session;
@@ -171,11 +173,11 @@ final class NeoForgeFallRescue {
             if (!landing.exists()) {
                 return false;
             }
-            if (needsRescan(session, landing)) {
-                session.landing = landing;
-                rescan(session);
+            boolean rescan = needsRescan(session, landing);
+            session.landing = landing;
+            if (rescan && rescan(session)) {
+                session.lastRescanLanding = landing;
             } else {
-                session.landing = landing;
                 updateGoalTargets(session);
             }
         }
@@ -240,21 +242,27 @@ final class NeoForgeFallRescue {
     }
 
     private boolean needsRescan(Session session, FallTrajectory.Result landing) {
-        double distanceX = landing.x - session.landing.x;
-        double distanceZ = landing.z - session.landing.z;
+        double distanceX = landing.x - session.lastRescanLanding.x;
+        double distanceZ = landing.z - session.lastRescanLanding.z;
         return distanceX * distanceX + distanceZ * distanceZ >= RESCAN_HORIZONTAL_DISTANCE_SQUARED
-                || Math.abs(landing.y - session.landing.y) >= RESCAN_VERTICAL_DISTANCE;
+                || Math.abs(landing.y - session.lastRescanLanding.y) >= RESCAN_VERTICAL_DISTANCE;
     }
 
-    private void rescan(Session session) {
-        clearGoals(session);
+    private boolean rescan(Session session) {
         double radius = config.attractionRadius();
         double verticalRange = config.verticalRange();
         AABB searchBox = new AABB(session.landing.x - radius, session.landing.y - verticalRange,
                 session.landing.z - radius, session.landing.x + radius,
                 session.landing.y + verticalRange, session.landing.z + radius);
-        List<Mob> candidates = session.level.getEntitiesOfClass(Mob.class, searchBox,
-                mob -> eligible(mob, session.level));
+        List<Mob> candidates;
+        try {
+            candidates = session.level.getEntitiesOfClass(Mob.class, searchBox,
+                    mob -> eligible(mob, session.level));
+        } catch (RuntimeException exception) {
+            LOGGER.error("Could not rescan rescue candidates", exception);
+            return false;
+        }
+        clearGoals(session);
         double radiusSquared = radius * radius;
         for (Mob mob : candidates) {
             double dx = mob.getX() - session.landing.x;
@@ -270,6 +278,7 @@ final class NeoForgeFallRescue {
                 session.followers.add(goal);
             }
         }
+        return true;
     }
 
     private boolean eligible(Mob mob, ServerLevel level) {
@@ -335,6 +344,7 @@ final class NeoForgeFallRescue {
         private final ServerLevel level;
         private final List<FollowGoal> followers = new ArrayList<>();
         private FallTrajectory.Result landing;
+        private FallTrajectory.Result lastRescanLanding;
         private Mob mountedEntity;
         private long lastPredictionTick;
         private long lastSeenTick;
@@ -344,6 +354,7 @@ final class NeoForgeFallRescue {
             this.player = player;
             this.level = level;
             this.landing = landing;
+            this.lastRescanLanding = landing;
         }
     }
 

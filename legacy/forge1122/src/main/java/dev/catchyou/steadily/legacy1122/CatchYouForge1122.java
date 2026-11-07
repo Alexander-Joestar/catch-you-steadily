@@ -144,7 +144,9 @@ public final class CatchYouForge1122 {
             return null;
         }
         Session session = new Session(player, (WorldServer)player.world, landing);
-        rescan(session);
+        if (!rescan(session)) {
+            return null;
+        }
         return session;
     }
 
@@ -181,11 +183,11 @@ public final class CatchYouForge1122 {
             if (!landing.exists()) {
                 return false;
             }
-            if (needsRescan(session, landing)) {
-                session.landing = landing;
-                rescan(session);
+            boolean rescan = needsRescan(session, landing);
+            session.landing = landing;
+            if (rescan && rescan(session)) {
+                session.lastRescanLanding = landing;
             } else {
-                session.landing = landing;
                 updateGoalTargets(session);
             }
         }
@@ -274,20 +276,26 @@ public final class CatchYouForge1122 {
     }
 
     private boolean needsRescan(Session session, FallTrajectory.Result landing) {
-        double dx = landing.x - session.landing.x;
-        double dz = landing.z - session.landing.z;
+        double dx = landing.x - session.lastRescanLanding.x;
+        double dz = landing.z - session.lastRescanLanding.z;
         return dx * dx + dz * dz >= RESCAN_HORIZONTAL_DISTANCE_SQUARED
-                || Math.abs(landing.y - session.landing.y) >= RESCAN_VERTICAL_DISTANCE;
+                || Math.abs(landing.y - session.lastRescanLanding.y) >= RESCAN_VERTICAL_DISTANCE;
     }
 
-    private void rescan(Session session) {
-        clearGoals(session);
+    private boolean rescan(Session session) {
         double radius = config.attractionRadius();
         double verticalRange = config.verticalRange();
         AxisAlignedBB searchBox = new AxisAlignedBB(session.landing.x - radius, session.landing.y - verticalRange,
                 session.landing.z - radius, session.landing.x + radius,
                 session.landing.y + verticalRange, session.landing.z + radius);
-        List<EntityLiving> candidates = session.world.getEntitiesWithinAABB(EntityLiving.class, searchBox);
+        List<EntityLiving> candidates;
+        try {
+            candidates = session.world.getEntitiesWithinAABB(EntityLiving.class, searchBox);
+        } catch (RuntimeException exception) {
+            LOGGER.error("Could not rescan rescue candidates", exception);
+            return false;
+        }
+        clearGoals(session);
         double radiusSquared = radius * radius;
         for (EntityLiving mob : candidates) {
             if (!eligible(mob, session.world)) {
@@ -305,6 +313,7 @@ public final class CatchYouForge1122 {
                 session.followers.add(goal);
             }
         }
+        return true;
     }
 
     private boolean eligible(EntityLiving mob, WorldServer world) {
@@ -382,6 +391,7 @@ public final class CatchYouForge1122 {
         private final WorldServer world;
         private final List<FollowGoal> followers = new ArrayList<>();
         private FallTrajectory.Result landing;
+        private FallTrajectory.Result lastRescanLanding;
         private EntityLiving mountedEntity;
         private long lastPredictionTick;
         private long lastSeenTick;
@@ -391,6 +401,7 @@ public final class CatchYouForge1122 {
             this.player = player;
             this.world = world;
             this.landing = landing;
+            this.lastRescanLanding = landing;
         }
     }
 
