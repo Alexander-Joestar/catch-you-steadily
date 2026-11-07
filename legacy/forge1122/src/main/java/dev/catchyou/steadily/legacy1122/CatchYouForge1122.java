@@ -164,9 +164,12 @@ public final class CatchYouForge1122 {
             }
             if (session.mountedEntity.onGround || !session.world.getCollisionBoxes(session.mountedEntity,
                     session.mountedEntity.getEntityBoundingBox().offset(0, -0.05D, 0)).isEmpty()) {
-                player.dismountRidingEntity();
+                if (!config.keepRiding()) {
+                    player.dismountRidingEntity();
+                    LOGGER.info("Player {} safely dismounted", player.getUniqueID());
+                }
                 player.fallDistance = 0.0F;
-                LOGGER.info("Player {} safely dismounted", player.getUniqueID());
+                session.mountedEntity = null;
                 return false;
             }
             return true;

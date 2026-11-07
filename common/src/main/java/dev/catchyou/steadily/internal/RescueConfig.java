@@ -14,13 +14,16 @@ public final class RescueConfig {
     private static final String EXCLUDED_ENTITIES = "excluded-entities";
     private static final String ATTRACTION_RADIUS = "attraction-radius";
     private static final String VERTICAL_RANGE = "vertical-range";
+    private static final String KEEP_RIDING = "keep-riding";
+    private final boolean keepRiding;
     private final boolean excludeHostile;
     private final Set<String> excludedEntities;
     private final double attractionRadius;
     private final double verticalRange;
 
     private RescueConfig(boolean excludeHostile, Set<String> excludedEntities,
-                         double attractionRadius, double verticalRange) {
+                         double attractionRadius, double verticalRange, boolean keepRiding) {
+        this.keepRiding = keepRiding;
         this.excludeHostile = excludeHostile;
         this.excludedEntities = Collections.unmodifiableSet(excludedEntities);
         this.attractionRadius = attractionRadius;
@@ -40,17 +43,16 @@ public final class RescueConfig {
                     + "# Horizontal search radius in blocks (1-32).\n"
                     + ATTRACTION_RADIUS + "=24\n"
                     + "# Vertical search range in blocks (1-16).\n"
-                    + VERTICAL_RANGE + "=12\n").getBytes(StandardCharsets.UTF_8));
+                    + VERTICAL_RANGE + "=12\n"
+                    + "# Read at server startup. False dismounts on safe landing; true keeps riding.\n"
+                    + KEEP_RIDING + "=false\n").getBytes(StandardCharsets.UTF_8));
         }
         Properties properties = new Properties();
         try (java.io.Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
             properties.load(reader);
         }
-        String excludeHostileValue = properties.getProperty(EXCLUDE_HOSTILE, "false").trim();
-        if (!"true".equalsIgnoreCase(excludeHostileValue) && !"false".equalsIgnoreCase(excludeHostileValue)) {
-            throw new IllegalArgumentException(EXCLUDE_HOSTILE + " must be true or false");
-        }
-        boolean excludeHostile = Boolean.parseBoolean(excludeHostileValue);
+        boolean excludeHostile = parseBoolean(properties, EXCLUDE_HOSTILE);
+        boolean keepRiding = parseBoolean(properties, KEEP_RIDING);
         Set<String> excludedEntities = new HashSet<>();
         for (String id : properties.getProperty(EXCLUDED_ENTITIES, "").split(",")) {
             String normalized = id.trim();
@@ -60,7 +62,19 @@ public final class RescueConfig {
         }
         double attractionRadius = parseRange(properties, ATTRACTION_RADIUS, 24, 1, 32);
         double verticalRange = parseRange(properties, VERTICAL_RANGE, 12, 1, 16);
-        return new RescueConfig(excludeHostile, excludedEntities, attractionRadius, verticalRange);
+        return new RescueConfig(excludeHostile, excludedEntities, attractionRadius, verticalRange, keepRiding);
+    }
+
+    public boolean keepRiding() {
+        return keepRiding;
+    }
+
+    private static boolean parseBoolean(Properties properties, String key) {
+        String value = properties.getProperty(key, "false").trim();
+        if (!"true".equalsIgnoreCase(value) && !"false".equalsIgnoreCase(value)) {
+            throw new IllegalArgumentException(key + " must be true or false");
+        }
+        return Boolean.parseBoolean(value);
     }
 
     public boolean excludes(String entityId, boolean hostile) {

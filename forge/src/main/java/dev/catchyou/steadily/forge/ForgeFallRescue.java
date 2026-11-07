@@ -151,9 +151,12 @@ final class ForgeFallRescue {
             }
             if (session.mountedEntity.onGround() || !session.level.noCollision(session.mountedEntity,
                     session.mountedEntity.getBoundingBox().move(0, -0.05, 0))) {
-                player.stopRiding();
+                if (!config.keepRiding()) {
+                    player.stopRiding();
+                    LOGGER.info("Player {} safely dismounted", player.getGameProfile().getName());
+                }
                 player.resetFallDistance();
-                LOGGER.info("Player {} safely dismounted", player.getGameProfile().getName());
+                session.mountedEntity = null;
                 return false;
             }
             return true;
