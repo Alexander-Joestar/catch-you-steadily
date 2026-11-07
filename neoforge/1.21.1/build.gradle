@@ -24,6 +24,8 @@ sourceSets.main.java.srcDir rootProject.file('neoforge/src/main/java')
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 java.sourceCompatibility = JavaVersion.VERSION_1_8
 java.targetCompatibility = JavaVersion.VERSION_1_8
-configurations.named('compileClasspath') {
-    attributes.attribute(org.gradle.api.attributes.java.TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, 21)
+['compileClasspath', 'runtimeClasspath'].each { configuration ->
+    configurations.named(configuration) {
+        attributes.attribute(org.gradle.api.attributes.java.TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, 21)
+    }
 }

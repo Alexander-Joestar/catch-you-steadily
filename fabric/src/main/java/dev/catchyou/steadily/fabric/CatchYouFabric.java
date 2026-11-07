@@ -1,9 +1,8 @@
 package dev.catchyou.steadily.fabric;
 
-import dev.catchyou.steadily.internal.RescueConfig;
 import java.io.IOException;
-import java.nio.file.Paths;
 import net.fabricmc.api.DedicatedServerModInitializer;
+import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -20,8 +19,9 @@ public final class CatchYouFabric implements DedicatedServerModInitializer {
     public void onInitializeServer() {
         final FabricFallRescue rescue;
         try {
-            rescue = new FabricFallRescue(RescueConfig.load(Paths.get("config", "catch-you-steadily.properties")));
-        } catch (IOException | IllegalArgumentException exception) {
+            rescue = new FabricFallRescue(FabricConfig.load(FabricLoader.getInstance().getConfigDir()
+                    .resolve("catch-you-steadily.json")));
+        } catch (IOException | RuntimeException exception) {
             LOGGER.error("Could not load the rescue configuration", exception);
             throw new IllegalStateException("Could not initialize rescue gameplay", exception);
         }
