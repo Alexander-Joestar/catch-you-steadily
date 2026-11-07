@@ -9,6 +9,7 @@ import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import dev.catchyou.steadily.internal.FallTrajectory;
 import dev.catchyou.steadily.internal.RescueConfig;
+import dev.catchyou.steadily.internal.RescueFormation;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -37,10 +38,9 @@ public final class CatchYouForge1710 {
     private static final Logger LOGGER = LogManager.getLogger("catch-you-steadily");
     private static final int PREDICTION_INTERVAL = 5;
     private static final int GOAL_REPATH_INTERVAL = 10;
-    private static final double FOLLOW_SPEED = 1.2D;
-    private static final double RESCAN_HORIZONTAL_DISTANCE_SQUARED = 9.0D;
+    private static final double FOLLOW_SPEED = 1.45D;
+    private static final double RESCAN_HORIZONTAL_DISTANCE_SQUARED = 4.0D;
     private static final double RESCAN_VERTICAL_DISTANCE = 2.0D;
-    private static final double LANDING_CONTACT_DISTANCE_SQUARED = 2.25D;
     private final FallTrajectory trajectory = new FallTrajectory();
     private final Map<UUID, Session> sessions = new HashMap<>();
     private final Map<UUID, MotionSample> previousPositions = new HashMap<>();
@@ -89,8 +89,9 @@ public final class CatchYouForge1710 {
             }
             if (session == null) {
                 MotionSample sample = previousPositions.get(playerId);
-                if (player.onGround || player.fallDistance < 0.25F || velocity.y >= 0.0D
-                        || tick - sample.lastPredictionTick < PREDICTION_INTERVAL) {
+                int interval = (velocity.x * velocity.x + velocity.z * velocity.z > 0.001D) ? 2 : PREDICTION_INTERVAL;
+                if (player.onGround || player.fallDistance < 0.1F || velocity.y >= 0.0D
+                        || tick - sample.lastPredictionTick < interval) {
                     continue;
                 }
                 sample.lastPredictionTick = tick;
@@ -168,6 +169,9 @@ public final class CatchYouForge1710 {
                     || !isLoaded(session.mountedEntity, session.world)) {
                 return false;
             }
+            if (tick - session.mountedTick < 2) {
+                return true;
+            }
             if (session.mountedEntity.onGround || !session.world.getCollidingBoundingBoxes(session.mountedEntity,
                     session.mountedEntity.getBoundingBox().offset(0, -0.05D, 0)).isEmpty()) {
                 if (!config.keepRiding()) {
@@ -186,7 +190,8 @@ public final class CatchYouForge1710 {
         if (velocity.y < 0.0D && tryMount(session, velocity)) {
             return true;
         }
-        if (velocity.y < 0.0D && tick - session.lastPredictionTick >= PREDICTION_INTERVAL) {
+        int interval = (velocity.x * velocity.x + velocity.z * velocity.z > 0.001D) ? 2 : PREDICTION_INTERVAL;
+        if (velocity.y < 0.0D && tick - session.lastPredictionTick >= interval) {
             session.lastPredictionTick = tick;
             FallTrajectory.Result landing = predict(player, velocity);
             if (!landing.exists()) {
@@ -205,34 +210,37 @@ public final class CatchYouForge1710 {
     }
 
     private FallTrajectory.Result predict(EntityPlayerMP player, Motion velocity) {
-        return trajectory.predict(player.posX, player.posY, player.posZ, velocity.x, velocity.y,
-                velocity.z, player.fallDistance, new FallTrajectory.CollisionProbe() {
-                    @Override
-                    public FallTrajectory.Movement move(double x, double y, double z,
-                                                         double dx, double dy, double dz) {
-                        AxisAlignedBB box = player.boundingBox.getOffsetBoundingBox(
-                                x - player.posX, y - player.posY, z - player.posZ);
-                        List<?> collisions = player.worldObj.getCollidingBoundingBoxes(player, box.addCoord(dx, dy, dz));
-                        double cy = dy;
-                        for (Object collision : collisions) {
-                            cy = ((AxisAlignedBB)collision).calculateYOffset(box, cy);
-                        }
-                        boolean liquid = player.worldObj.isAnyLiquid(box.addCoord(0, cy, 0));
-                        box.offset(0, cy, 0);
-                        double cx = dx;
-                        for (Object collision : collisions) {
-                            cx = ((AxisAlignedBB)collision).calculateXOffset(box, cx);
-                        }
-                        liquid |= player.worldObj.isAnyLiquid(box.addCoord(cx, 0, 0));
-                        box.offset(cx, 0, 0);
-                        double cz = dz;
-                        for (Object collision : collisions) {
-                            cz = ((AxisAlignedBB)collision).calculateZOffset(box, cz);
-                        }
-                        liquid |= player.worldObj.isAnyLiquid(box.addCoord(0, 0, cz));
-                        return new FallTrajectory.Movement(cx, cy, cz, liquid);
-                    }
-                });
+        return trajectory.predict(player.posX, player.boundingBox.minY, player.posZ, velocity.x, velocity.y,
+                velocity.z, player.fallDistance, collisionProbe(player));
+    }
+
+    private FallTrajectory.CollisionProbe collisionProbe(Entity entity) {
+        return new FallTrajectory.CollisionProbe() {
+            @Override
+            public FallTrajectory.Movement move(double x, double y, double z, double dx, double dy, double dz) {
+                AxisAlignedBB box = entity.boundingBox.getOffsetBoundingBox(
+                        x - entity.posX, y - entity.boundingBox.minY, z - entity.posZ);
+                List<?> collisions = entity.worldObj.getCollidingBoundingBoxes(entity, box.addCoord(dx, dy, dz));
+                double cy = dy;
+                for (Object collision : collisions) {
+                    cy = ((AxisAlignedBB)collision).calculateYOffset(box, cy);
+                }
+                boolean liquid = entity.worldObj.isAnyLiquid(box.addCoord(0, cy, 0));
+                box.offset(0, cy, 0);
+                double cx = dx;
+                for (Object collision : collisions) {
+                    cx = ((AxisAlignedBB)collision).calculateXOffset(box, cx);
+                }
+                liquid |= entity.worldObj.isAnyLiquid(box.addCoord(cx, 0, 0));
+                box.offset(cx, 0, 0);
+                double cz = dz;
+                for (Object collision : collisions) {
+                    cz = ((AxisAlignedBB)collision).calculateZOffset(box, cz);
+                }
+                liquid |= entity.worldObj.isAnyLiquid(box.addCoord(0, 0, cz));
+                return new FallTrajectory.Movement(cx, cy, cz, liquid);
+            }
+        };
     }
 
     @SubscribeEvent
@@ -248,11 +256,46 @@ public final class CatchYouForge1710 {
         if (session == null || session.fallDamageHandled) {
             return false;
         }
-        if (session.mountedEntity == null || player.ridingEntity != session.mountedEntity) {
+        if (session.mountedEntity == null && !tryMountAtFall(session)) {
+            return false;
+        }
+        if (player.ridingEntity != session.mountedEntity) {
             return false;
         }
         session.fallDamageHandled = true;
         return true;
+    }
+
+    private boolean tryMountAtFall(Session session) {
+        EntityPlayerMP player = session.player;
+        MotionSample sample = previousPositions.get(player.getUniqueID());
+        if (sample == null || sample.lastSeenTick != tick || player.posY >= sample.y
+                || player.isDead || !player.isEntityAlive() || player.worldObj != session.world
+                || player.ridingEntity != null || player.isInWater()
+                || !session.world.getCollidingBoundingBoxes(player, player.boundingBox).isEmpty()) {
+            return false;
+        }
+        for (FollowGoal goal : session.followers) {
+            EntityLiving mob = goal.mob;
+            if (!eligible(mob, session.world) || !isLoaded(mob, session.world)) {
+                continue;
+            }
+            AxisAlignedBB box = mob.getBoundingBox();
+            if (!trajectory.touchesSeat(player.posX, player.boundingBox.minY, player.posZ, player.width,
+                    player.boundingBox.maxY - player.boundingBox.minY,
+                    box.minX, box.maxX, box.minZ, box.maxZ, box.maxY, collisionProbe(player))) {
+                continue;
+            }
+            player.mountEntity(mob);
+            if (player.ridingEntity == mob) {
+                session.mountedEntity = mob;
+                session.mountedTick = tick;
+                player.fallDistance = 0.0F;
+                clearGoals(session);
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean tryMount(Session session, Motion velocity) {
@@ -263,20 +306,17 @@ public final class CatchYouForge1710 {
                     || !isLoaded(mob, session.world) || mob.riddenByEntity != null) {
                 continue;
             }
-            double dx = mob.posX - session.landing.x;
-            double dz = mob.posZ - session.landing.z;
-            if (dx * dx + dz * dz > LANDING_CONTACT_DISTANCE_SQUARED) {
-                continue;
-            }
             AxisAlignedBB mobBox = mob.getBoundingBox();
-            if (!trajectory.reachesSeat(player.posX, player.posY, player.posZ, player.width,
+            if (!trajectory.reachesSeat(player.posX, player.boundingBox.minY, player.posZ, player.width,
                     velocity.x, velocity.y, velocity.z, mobBox.minX, mobBox.maxX, mobBox.minZ, mobBox.maxZ,
-                    mobBox.maxY)) {
+                    mobBox.minY, mobBox.maxY, mob.motionX, mob.motionY, mob.motionZ,
+                    collisionProbe(player), collisionProbe(mob))) {
                 continue;
             }
             player.mountEntity(mob);
             if (player.ridingEntity == mob) {
                 session.mountedEntity = mob;
+                session.mountedTick = tick;
                 player.fallDistance = 0.0F;
                 clearGoals(session);
                 return true;
@@ -289,10 +329,12 @@ public final class CatchYouForge1710 {
         double dx = landing.x - session.lastRescanLanding.x;
         double dz = landing.z - session.lastRescanLanding.z;
         return dx * dx + dz * dz >= RESCAN_HORIZONTAL_DISTANCE_SQUARED
-                || Math.abs(landing.y - session.lastRescanLanding.y) >= RESCAN_VERTICAL_DISTANCE;
+                || Math.abs(landing.y - session.lastRescanLanding.y) >= RESCAN_VERTICAL_DISTANCE
+                || (session.followers.isEmpty() && tick - session.lastRescanTick >= 10);
     }
 
     private boolean rescan(Session session) {
+        session.lastRescanTick = tick;
         double radius = config.attractionRadius();
         double verticalRange = config.verticalRange();
         AxisAlignedBB searchBox = AxisAlignedBB.getBoundingBox(session.landing.x - radius,
@@ -305,11 +347,20 @@ public final class CatchYouForge1710 {
             LOGGER.error("Could not rescan rescue candidates", exception);
             return false;
         }
-        clearGoals(session);
+        pruneFollowers(session);
+        if (session.followers.isEmpty()) {
+            java.util.Collections.sort(candidates, new java.util.Comparator<EntityLiving>() {
+                @Override
+                public int compare(EntityLiving first, EntityLiving second) {
+                    return Double.compare(Math.hypot(first.posX - session.landing.x, first.posZ - session.landing.z),
+                            Math.hypot(second.posX - session.landing.x, second.posZ - session.landing.z));
+                }
+            });
+        }
         double radiusSquared = radius * radius;
         for (Object object : candidates) {
             EntityLiving mob = (EntityLiving)object;
-            if (!eligible(mob, session.world)) {
+            if (!eligible(mob, session.world) || hasFollower(session, mob) || claimedByOther(session, mob)) {
                 continue;
             }
             double dx = mob.posX - session.landing.x;
@@ -318,17 +369,64 @@ public final class CatchYouForge1710 {
                 continue;
             }
             FollowGoal goal = new FollowGoal(mob, session);
-            goal.setTarget(session.landing.x, session.landing.z);
+            RescueFormation.TargetPoint target = RescueFormation.computeTarget(session.landing.x,
+                    session.landing.z, session.followers.size(), formationSpacing(session, mob));
+            goal.setTarget(target.x, target.z);
             if (goal.repath()) {
                 mob.tasks.addTask(-1, goal);
                 session.followers.add(goal);
             }
         }
+        updateGoalTargets(session);
         return true;
     }
 
+    private boolean hasFollower(Session session, EntityLiving mob) {
+        for (FollowGoal goal : session.followers) {
+            if (goal.mob == mob) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void pruneFollowers(Session session) {
+        double radiusSquared = config.attractionRadius() * config.attractionRadius();
+        Iterator<FollowGoal> iterator = session.followers.iterator();
+        while (iterator.hasNext()) {
+            FollowGoal goal = iterator.next();
+            EntityLiving mob = goal.mob;
+            double dx = mob.posX - session.landing.x;
+            double dz = mob.posZ - session.landing.z;
+            if (!eligible(mob, session.world) || !isLoaded(mob, session.world)
+                    || dx * dx + dz * dz > radiusSquared
+                    || Math.abs(mob.posY - session.landing.y) > config.verticalRange()) {
+                mob.tasks.removeTask(goal);
+                iterator.remove();
+            }
+        }
+    }
+
+    private boolean claimedByOther(Session session, EntityLiving mob) {
+        for (Session other : sessions.values()) {
+            if (other == session) {
+                continue;
+            }
+            if (other.mountedEntity == mob) {
+                return true;
+            }
+            for (FollowGoal goal : other.followers) {
+                if (goal.mob == mob) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private boolean eligible(EntityLiving mob, WorldServer world) {
-        if (mob.isDead || !mob.isEntityAlive() || mob.ridingEntity != null || mob.worldObj != world) {
+        if (mob.isDead || !mob.isEntityAlive() || mob.ridingEntity != null
+                || mob.riddenByEntity != null || mob.worldObj != world) {
             return false;
         }
         String entityId = EntityList.getEntityString(mob);
@@ -354,9 +452,21 @@ public final class CatchYouForge1710 {
                 && world.getEntityByID(entity.getEntityId()) == entity;
     }
 
-    private void updateGoalTargets(Session session) {
+    private double formationSpacing(Session session, EntityLiving candidate) {
+        double width = candidate == null ? 0 : candidate.width;
         for (FollowGoal goal : session.followers) {
-            goal.setTarget(session.landing.x, session.landing.z);
+            width = Math.max(width, goal.mob.width);
+        }
+        return width + 0.1D;
+    }
+
+    private void updateGoalTargets(Session session) {
+        double spacing = formationSpacing(session, null);
+        for (int i = 0; i < session.followers.size(); i++) {
+            FollowGoal goal = session.followers.get(i);
+            RescueFormation.TargetPoint target = RescueFormation.computeTarget(
+                    session.landing.x, session.landing.z, i, spacing);
+            goal.setTarget(target.x, target.z);
         }
     }
 
@@ -434,6 +544,8 @@ public final class CatchYouForge1710 {
         private FallTrajectory.Result landing;
         private FallTrajectory.Result lastRescanLanding;
         private Entity mountedEntity;
+        private long mountedTick;
+        private long lastRescanTick;
         private long lastPredictionTick;
         private long lastSeenTick;
         private boolean fallDamageHandled;
@@ -478,7 +590,7 @@ public final class CatchYouForge1710 {
                 repathDelay = GOAL_REPATH_INTERVAL;
                 double dx = targetX - lastPathX;
                 double dz = targetZ - lastPathZ;
-                if (Double.isNaN(lastPathX) || dx * dx + dz * dz >= 4.0D
+                if (Double.isNaN(lastPathX) || dx * dx + dz * dz >= 0.64D
                         || (mob.getNavigator().noPath() && distanceToTargetSquared() > 2.25D)) {
                     repath();
                 }
@@ -493,6 +605,11 @@ public final class CatchYouForge1710 {
         private void setTarget(double x, double z) {
             targetX = x;
             targetZ = z;
+            double dx = targetX - lastPathX;
+            double dz = targetZ - lastPathZ;
+            if (!Double.isNaN(lastPathX) && (dx * dx + dz * dz >= 0.64D) && repathDelay > 2) {
+                repathDelay = 0;
+            }
         }
 
         private boolean repath() {

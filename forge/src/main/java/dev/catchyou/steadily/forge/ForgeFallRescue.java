@@ -2,6 +2,7 @@ package dev.catchyou.steadily.forge;
 
 import dev.catchyou.steadily.internal.FallTrajectory;
 import dev.catchyou.steadily.internal.RescueConfig;
+import dev.catchyou.steadily.internal.RescueFormation;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -22,10 +23,9 @@ final class ForgeFallRescue {
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("catch-you-steadily");
     private static final int PREDICTION_INTERVAL = 5;
     private static final int GOAL_REPATH_INTERVAL = 10;
-    private static final double FOLLOW_SPEED = 1.2;
-    private static final double RESCAN_HORIZONTAL_DISTANCE_SQUARED = 9;
+    private static final double FOLLOW_SPEED = 1.45;
+    private static final double RESCAN_HORIZONTAL_DISTANCE_SQUARED = 4.0;
     private static final double RESCAN_VERTICAL_DISTANCE = 2;
-    private static final double LANDING_CONTACT_DISTANCE_SQUARED = 2.25;
     private final RescueConfig config;
     private final FallTrajectory trajectory = new FallTrajectory();
     private final Map<UUID, Session> sessions = new HashMap<>();
@@ -53,10 +53,11 @@ final class ForgeFallRescue {
                     previous == null ? tick - PREDICTION_INTERVAL : previous.lastPredictionTick);
             Vec3 observed = current.subtract(previousPosition);
             Vec3 velocity = observed.lengthSqr() > 1.0E-8 ? observed : player.getDeltaMovement();
+            int interval = (velocity.x * velocity.x + velocity.z * velocity.z > 0.001) ? 2 : PREDICTION_INTERVAL;
             try {
                 if (session == null) {
-                    if (player.onGround() || player.fallDistance < 0.25F || velocity.y >= 0
-                            || tick - sample.lastPredictionTick < PREDICTION_INTERVAL) {
+                    if (player.onGround() || player.fallDistance < 0.1F || velocity.y >= 0
+                            || tick - sample.lastPredictionTick < interval) {
                         continue;
                     }
                     sample.lastPredictionTick = tick;
@@ -97,11 +98,45 @@ final class ForgeFallRescue {
         if (session == null || session.fallDamageHandled) {
             return false;
         }
-        if (session.mountedEntity == null || player.getVehicle() != session.mountedEntity) {
+        if (session.mountedEntity == null && !tryMountAtFall(session)) {
+            return false;
+        }
+        if (player.getVehicle() != session.mountedEntity) {
             return false;
         }
         session.fallDamageHandled = true;
         return true;
+    }
+
+    private boolean tryMountAtFall(Session session) {
+        ServerPlayer player = session.player;
+        MotionSample sample = previousPositions.get(player.getUUID());
+        if (sample == null || sample.lastSeenTick != tick || player.getY() >= sample.position.y
+                || !player.isAlive() || player.isRemoved() || player.serverLevel() != session.level
+                || player.isPassenger() || player.isInWaterOrBubble()
+                || !session.level.noCollision(player, player.getBoundingBox())) {
+            return false;
+        }
+        for (FollowGoal goal : session.followers) {
+            Mob mob = goal.mob;
+            if (!eligible(mob, session.level)) {
+                continue;
+            }
+            AABB box = mob.getBoundingBox();
+            if (!trajectory.touchesSeat(player.getX(), player.getY(), player.getZ(), player.getBbWidth(),
+                    player.getBbHeight(), box.minX, box.maxX, box.minZ, box.maxZ, box.maxY,
+                    collisionProbe(player))) {
+                continue;
+            }
+            if (player.startRiding(mob)) {
+                session.mountedEntity = mob;
+                session.mountedTick = tick;
+                player.resetFallDistance();
+                clearGoals(session);
+                return true;
+            }
+        }
+        return false;
     }
 
     void remove(ServerPlayer player) {
@@ -149,6 +184,9 @@ final class ForgeFallRescue {
                     || !session.mountedEntity.isAlive() || session.mountedEntity.level() != session.level) {
                 return false;
             }
+            if (tick - session.mountedTick < 2) {
+                return true;
+            }
             if (session.mountedEntity.onGround() || !session.level.noCollision(session.mountedEntity,
                     session.mountedEntity.getBoundingBox().move(0, -0.05, 0))) {
                 if (!config.keepRiding()) {
@@ -170,7 +208,8 @@ final class ForgeFallRescue {
         if (velocity.y < 0 && tryMount(session, velocity)) {
             return true;
         }
-        if (velocity.y < 0 && tick - session.lastPredictionTick >= PREDICTION_INTERVAL) {
+        int interval = (velocity.x * velocity.x + velocity.z * velocity.z > 0.001) ? 2 : PREDICTION_INTERVAL;
+        if (velocity.y < 0 && tick - session.lastPredictionTick >= interval) {
             session.lastPredictionTick = tick;
             FallTrajectory.Result landing = predict(player, velocity);
             if (!landing.exists()) {
@@ -190,28 +229,31 @@ final class ForgeFallRescue {
 
     private FallTrajectory.Result predict(ServerPlayer player, Vec3 velocity) {
         return trajectory.predict(player.getX(), player.getY(), player.getZ(), velocity.x, velocity.y,
-                velocity.z, player.fallDistance, new FallTrajectory.CollisionProbe() {
-                    @Override
-                    public FallTrajectory.Movement move(double x, double y, double z,
-                                                         double dx, double dy, double dz) {
-                        AABB box = player.getBoundingBox().move(x - player.getX(), y - player.getY(), z - player.getZ());
-                        Vec3 clipped = net.minecraft.world.entity.Entity.collideBoundingBox(player,
-                                new Vec3(dx, dy, dz), box, player.level(),
-                                player.level().getEntityCollisions(player, box.expandTowards(dx, dy, dz)));
-                        boolean liquid = player.level().containsAnyLiquid(box.expandTowards(0, clipped.y, 0));
-                        box = box.move(0, clipped.y, 0);
-                        if (Math.abs(clipped.x) < Math.abs(clipped.z)) {
-                            liquid |= player.level().containsAnyLiquid(box.expandTowards(0, 0, clipped.z));
-                            box = box.move(0, 0, clipped.z);
-                            liquid |= player.level().containsAnyLiquid(box.expandTowards(clipped.x, 0, 0));
-                        } else {
-                            liquid |= player.level().containsAnyLiquid(box.expandTowards(clipped.x, 0, 0));
-                            box = box.move(clipped.x, 0, 0);
-                            liquid |= player.level().containsAnyLiquid(box.expandTowards(0, 0, clipped.z));
-                        }
-                        return new FallTrajectory.Movement(clipped.x, clipped.y, clipped.z, liquid);
-                    }
-                });
+                velocity.z, player.fallDistance, collisionProbe(player));
+    }
+
+    private FallTrajectory.CollisionProbe collisionProbe(net.minecraft.world.entity.Entity entity) {
+        return new FallTrajectory.CollisionProbe() {
+            @Override
+            public FallTrajectory.Movement move(double x, double y, double z, double dx, double dy, double dz) {
+                AABB box = entity.getBoundingBox().move(x - entity.getX(), y - entity.getY(), z - entity.getZ());
+                Vec3 clipped = net.minecraft.world.entity.Entity.collideBoundingBox(entity,
+                        new Vec3(dx, dy, dz), box, entity.level(),
+                        entity.level().getEntityCollisions(entity, box.expandTowards(dx, dy, dz)));
+                boolean liquid = entity.level().containsAnyLiquid(box.expandTowards(0, clipped.y, 0));
+                box = box.move(0, clipped.y, 0);
+                if (Math.abs(clipped.x) < Math.abs(clipped.z)) {
+                    liquid |= entity.level().containsAnyLiquid(box.expandTowards(0, 0, clipped.z));
+                    box = box.move(0, 0, clipped.z);
+                    liquid |= entity.level().containsAnyLiquid(box.expandTowards(clipped.x, 0, 0));
+                } else {
+                    liquid |= entity.level().containsAnyLiquid(box.expandTowards(clipped.x, 0, 0));
+                    box = box.move(clipped.x, 0, 0);
+                    liquid |= entity.level().containsAnyLiquid(box.expandTowards(0, 0, clipped.z));
+                }
+                return new FallTrajectory.Movement(clipped.x, clipped.y, clipped.z, liquid);
+            }
+        };
     }
 
     private boolean tryMount(Session session, Vec3 velocity) {
@@ -221,19 +263,17 @@ final class ForgeFallRescue {
             if (!mob.isAlive() || mob.isRemoved() || mob.level() != session.level) {
                 continue;
             }
-            double distanceX = mob.getX() - session.landing.x;
-            double distanceZ = mob.getZ() - session.landing.z;
-            if (distanceX * distanceX + distanceZ * distanceZ > LANDING_CONTACT_DISTANCE_SQUARED) {
-                continue;
-            }
             AABB mobBox = mob.getBoundingBox();
+            Vec3 mobVelocity = mob.getDeltaMovement();
             if (!trajectory.reachesSeat(player.getX(), player.getY(), player.getZ(), player.getBbWidth(),
                     velocity.x, velocity.y, velocity.z, mobBox.minX, mobBox.maxX, mobBox.minZ, mobBox.maxZ,
-                    mobBox.maxY)) {
+                    mobBox.minY, mobBox.maxY, mobVelocity.x, mobVelocity.y, mobVelocity.z,
+                    collisionProbe(player), collisionProbe(mob))) {
                 continue;
             }
             if (player.startRiding(mob)) {
                 session.mountedEntity = mob;
+                session.mountedTick = tick;
                 player.resetFallDistance();
                 clearGoals(session);
                 LOGGER.info("Player {} was caught by {}", player.getGameProfile().getName(),
@@ -248,10 +288,12 @@ final class ForgeFallRescue {
         double distanceX = landing.x - session.lastRescanLanding.x;
         double distanceZ = landing.z - session.lastRescanLanding.z;
         return distanceX * distanceX + distanceZ * distanceZ >= RESCAN_HORIZONTAL_DISTANCE_SQUARED
-                || Math.abs(landing.y - session.lastRescanLanding.y) >= RESCAN_VERTICAL_DISTANCE;
+                || Math.abs(landing.y - session.lastRescanLanding.y) >= RESCAN_VERTICAL_DISTANCE
+                || (session.followers.isEmpty() && tick - session.lastRescanTick >= 10);
     }
 
     private boolean rescan(Session session) {
+        session.lastRescanTick = tick;
         double radius = config.attractionRadius();
         double verticalRange = config.verticalRange();
         AABB searchBox = new AABB(session.landing.x - radius, session.landing.y - verticalRange,
@@ -265,27 +307,77 @@ final class ForgeFallRescue {
             LOGGER.error("Could not rescan rescue candidates", exception);
             return false;
         }
-        clearGoals(session);
+        pruneFollowers(session);
+        if (session.followers.isEmpty()) {
+            candidates.sort(java.util.Comparator.comparingDouble(mob ->
+                    Math.hypot(mob.getX() - session.landing.x, mob.getZ() - session.landing.z)));
+        }
         double radiusSquared = radius * radius;
         for (Mob mob : candidates) {
             double dx = mob.getX() - session.landing.x;
             double dz = mob.getZ() - session.landing.z;
             if (dx * dx + dz * dz > radiusSquared
-                    || Math.abs(mob.getY() - session.landing.y) > verticalRange) {
+                    || Math.abs(mob.getY() - session.landing.y) > verticalRange
+                    || hasFollower(session, mob) || claimedByOther(session, mob)) {
                 continue;
             }
             FollowGoal goal = new FollowGoal(mob, session);
-            goal.setTarget(session.landing.x, session.landing.z);
+            RescueFormation.TargetPoint target = RescueFormation.computeTarget(session.landing.x,
+                    session.landing.z, session.followers.size(), formationSpacing(session, mob));
+            goal.setTarget(target.x, target.z);
             if (goal.repath()) {
                 mob.goalSelector.addGoal(-1, goal);
                 session.followers.add(goal);
             }
         }
+        updateGoalTargets(session);
         return true;
     }
 
+    private boolean hasFollower(Session session, Mob mob) {
+        for (FollowGoal goal : session.followers) {
+            if (goal.mob == mob) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void pruneFollowers(Session session) {
+        double radiusSquared = config.attractionRadius() * config.attractionRadius();
+        Iterator<FollowGoal> iterator = session.followers.iterator();
+        while (iterator.hasNext()) {
+            FollowGoal goal = iterator.next();
+            Mob mob = goal.mob;
+            double dx = mob.getX() - session.landing.x;
+            double dz = mob.getZ() - session.landing.z;
+            if (!eligible(mob, session.level) || dx * dx + dz * dz > radiusSquared
+                    || Math.abs(mob.getY() - session.landing.y) > config.verticalRange()) {
+                mob.goalSelector.removeGoal(goal);
+                iterator.remove();
+            }
+        }
+    }
+
+    private boolean claimedByOther(Session session, Mob mob) {
+        for (Session other : sessions.values()) {
+            if (other == session) {
+                continue;
+            }
+            if (other.mountedEntity == mob) {
+                return true;
+            }
+            for (FollowGoal goal : other.followers) {
+                if (goal.mob == mob) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private boolean eligible(Mob mob, ServerLevel level) {
-        if (!mob.isAlive() || mob.isRemoved() || mob.isPassenger() || mob.level() != level) {
+        if (!mob.isAlive() || mob.isRemoved() || mob.isPassenger() || mob.isVehicle() || mob.level() != level) {
             return false;
         }
         String entityId = BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType()).toString();
@@ -293,9 +385,21 @@ final class ForgeFallRescue {
         return !config.excludes(entityId, hostile);
     }
 
-    private void updateGoalTargets(Session session) {
+    private double formationSpacing(Session session, Mob candidate) {
+        double width = candidate == null ? 0 : candidate.getBbWidth();
         for (FollowGoal goal : session.followers) {
-            goal.setTarget(session.landing.x, session.landing.z);
+            width = Math.max(width, goal.mob.getBbWidth());
+        }
+        return width + 0.1;
+    }
+
+    private void updateGoalTargets(Session session) {
+        double spacing = formationSpacing(session, null);
+        for (int i = 0; i < session.followers.size(); i++) {
+            FollowGoal goal = session.followers.get(i);
+            RescueFormation.TargetPoint target = RescueFormation.computeTarget(
+                    session.landing.x, session.landing.z, i, spacing);
+            goal.setTarget(target.x, target.z);
         }
     }
 
@@ -349,6 +453,8 @@ final class ForgeFallRescue {
         private FallTrajectory.Result landing;
         private FallTrajectory.Result lastRescanLanding;
         private Mob mountedEntity;
+        private long mountedTick;
+        private long lastRescanTick;
         private long lastPredictionTick;
         private long lastSeenTick;
         private boolean fallDamageHandled;
@@ -393,7 +499,7 @@ final class ForgeFallRescue {
                 repathDelay = GOAL_REPATH_INTERVAL;
                 double deltaX = targetX - lastPathX;
                 double deltaZ = targetZ - lastPathZ;
-                if (Double.isNaN(lastPathX) || deltaX * deltaX + deltaZ * deltaZ >= 4
+                if (Double.isNaN(lastPathX) || deltaX * deltaX + deltaZ * deltaZ >= 0.64
                         || (mob.getNavigation().isDone() && mob.distanceToSqr(targetX, mob.getY(), targetZ) > 2.25)) {
                     repath();
                 }
@@ -408,6 +514,11 @@ final class ForgeFallRescue {
         private void setTarget(double x, double z) {
             targetX = x;
             targetZ = z;
+            double deltaX = targetX - lastPathX;
+            double deltaZ = targetZ - lastPathZ;
+            if (!Double.isNaN(lastPathX) && (deltaX * deltaX + deltaZ * deltaZ >= 0.64) && repathDelay > 2) {
+                repathDelay = 0;
+            }
         }
 
         private boolean repath() {
