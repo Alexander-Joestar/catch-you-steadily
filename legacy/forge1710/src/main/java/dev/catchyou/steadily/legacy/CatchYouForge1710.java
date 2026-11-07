@@ -68,7 +68,7 @@ public final class CatchYouForge1710 {
         }
     }
 
-    @SubscribeEvent
+    @Mod.EventHandler
     public void onServerStopping(FMLServerStoppingEvent event) {
         stop();
     }
