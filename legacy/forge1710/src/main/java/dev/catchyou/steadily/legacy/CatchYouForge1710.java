@@ -158,9 +158,11 @@ public final class CatchYouForge1710 {
         if (player.isDead || !player.isEntityAlive() || player.worldObj != session.world) {
             return false;
         }
+        removeUnreachable(session);
         if (session.mountedEntity != null) {
             if (player.ridingEntity != session.mountedEntity || session.mountedEntity.isDead
-                    || !session.mountedEntity.isEntityAlive() || session.mountedEntity.worldObj != session.world) {
+                    || !session.mountedEntity.isEntityAlive() || session.mountedEntity.worldObj != session.world
+                    || !isLoaded(session.mountedEntity, session.world)) {
                 return false;
             }
             if (session.mountedEntity.onGround || !session.world.getCollidingBoundingBoxes(session.mountedEntity,
@@ -251,7 +253,8 @@ public final class CatchYouForge1710 {
         EntityPlayerMP player = session.player;
         for (FollowGoal goal : session.followers) {
             EntityLiving mob = goal.mob;
-            if (mob.isDead || !mob.isEntityAlive() || mob.worldObj != session.world || mob.riddenByEntity != null) {
+            if (mob.isDead || !mob.isEntityAlive() || mob.worldObj != session.world
+                    || !isLoaded(mob, session.world) || mob.riddenByEntity != null) {
                 continue;
             }
             double dx = mob.posX - session.landing.x;
@@ -332,6 +335,12 @@ public final class CatchYouForge1710 {
         return "minecraft:" + entityId.toLowerCase(java.util.Locale.ROOT);
     }
 
+    private boolean isLoaded(Entity entity, WorldServer world) {
+        return entity.addedToChunk
+                && world.getChunkProvider().chunkExists(entity.chunkCoordX, entity.chunkCoordZ)
+                && world.getEntityByID(entity.getEntityId()) == entity;
+    }
+
     private void updateGoalTargets(Session session) {
         for (FollowGoal goal : session.followers) {
             goal.setTarget(session.landing.x, session.landing.z);
@@ -342,7 +351,8 @@ public final class CatchYouForge1710 {
         Iterator<FollowGoal> iterator = session.followers.iterator();
         while (iterator.hasNext()) {
             FollowGoal goal = iterator.next();
-            if (goal.mob.isDead || !goal.mob.isEntityAlive() || goal.mob.worldObj != session.world || goal.unreachable) {
+            if (goal.mob.isDead || !goal.mob.isEntityAlive() || goal.mob.worldObj != session.world
+                    || !isLoaded(goal.mob, session.world) || goal.unreachable) {
                 goal.mob.tasks.removeTask(goal);
                 iterator.remove();
             }

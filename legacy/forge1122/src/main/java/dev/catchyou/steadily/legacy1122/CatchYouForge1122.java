@@ -153,9 +153,11 @@ public final class CatchYouForge1122 {
         if (player.isDead || !player.isEntityAlive() || player.world != session.world) {
             return false;
         }
+        removeUnreachable(session);
         if (session.mountedEntity != null) {
             if (player.getRidingEntity() != session.mountedEntity || session.mountedEntity.isDead
-                    || !session.mountedEntity.isEntityAlive() || session.mountedEntity.world != session.world) {
+                    || !session.mountedEntity.isEntityAlive() || session.mountedEntity.world != session.world
+                    || !isLoaded(session.mountedEntity, session.world)) {
                 return false;
             }
             if (session.mountedEntity.onGround || !session.world.getCollisionBoxes(session.mountedEntity,
@@ -246,7 +248,8 @@ public final class CatchYouForge1122 {
         EntityPlayerMP player = session.player;
         for (FollowGoal goal : session.followers) {
             EntityLiving mob = goal.mob;
-            if (mob.isDead || !mob.isEntityAlive() || mob.world != session.world) {
+            if (mob.isDead || !mob.isEntityAlive() || mob.world != session.world
+                    || !isLoaded(mob, session.world)) {
                 continue;
             }
             double dx = mob.posX - session.landing.x;
@@ -312,6 +315,11 @@ public final class CatchYouForge1122 {
         return !config.excludes(entityId, mob.isCreatureType(EnumCreatureType.MONSTER, false));
     }
 
+    private boolean isLoaded(EntityLiving mob, WorldServer world) {
+        return mob.addedToChunk && world.getChunkProvider().getLoadedChunk(mob.chunkCoordX, mob.chunkCoordZ) != null
+                && world.getEntityByID(mob.getEntityId()) == mob;
+    }
+
     private void updateGoalTargets(Session session) {
         for (FollowGoal goal : session.followers) {
             goal.setTarget(session.landing.x, session.landing.z);
@@ -322,7 +330,8 @@ public final class CatchYouForge1122 {
         Iterator<FollowGoal> iterator = session.followers.iterator();
         while (iterator.hasNext()) {
             FollowGoal goal = iterator.next();
-            if (goal.mob.isDead || !goal.mob.isEntityAlive() || goal.mob.world != session.world || goal.unreachable) {
+            if (goal.mob.isDead || !goal.mob.isEntityAlive() || goal.mob.world != session.world
+                    || !isLoaded(goal.mob, session.world) || goal.unreachable) {
                 goal.mob.tasks.removeTask(goal);
                 iterator.remove();
             }
