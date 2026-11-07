@@ -1,49 +1,54 @@
 package dev.catchyou.steadily.forge;
 
-import dev.catchyou.steadily.api.FallPrediction;
-import dev.catchyou.steadily.api.RescueTasks;
+import dev.catchyou.steadily.internal.RescueConfig;
+import java.io.IOException;
+import java.nio.file.Paths;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.level.levelgen.Heightmap;
-import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.living.LivingFallEvent;
 import net.minecraftforge.event.server.ServerStoppingEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.common.MinecraftForge;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Mod("catch_you_steadily")
 public final class CatchYouForge {
-    private final RescueTasks tasks = RescueTasks.create();
-    private final FallPrediction prediction = FallPrediction.create();
+    private static final Logger LOGGER = LoggerFactory.getLogger("catch-you-steadily");
+    private final ForgeFallRescue rescue;
 
     public CatchYouForge() {
+        try {
+            rescue = new ForgeFallRescue(RescueConfig.load(Paths.get("config", "catch-you-steadily.properties")));
+        } catch (IOException | IllegalArgumentException exception) {
+            LOGGER.error("Could not load the rescue configuration", exception);
+            throw new IllegalStateException("Could not initialize rescue gameplay", exception);
+        }
         MinecraftForge.EVENT_BUS.register(this);
     }
 
     @SubscribeEvent
     public void onServerTick(TickEvent.ServerTickEvent event) {
-        if (event.phase != TickEvent.Phase.END) return;
-        tasks.tick();
-        if (event.getServer() == null) return;
-        for (ServerPlayer player : event.getServer().getPlayerList().getPlayers()) {
-            if (player.onGround()) {
-                tasks.remove(player.getUUID());
-                continue;
-            }
-            Vec3 velocity = player.getDeltaMovement();
-            if (velocity.y >= 0 || tasks.contains(player.getUUID())) continue;
-            int ground = player.serverLevel().getHeight(Heightmap.Types.MOTION_BLOCKING,
-                    player.blockPosition().getX(), player.blockPosition().getZ());
-            FallPrediction.Result result = prediction.predict(player.getX(), player.getY(), player.getZ(),
-                    velocity.x, velocity.y, velocity.z, ground, 0.08, 0.98, 100);
-            if (result.ticks > 0) {
-                tasks.start(player.getUUID(), result.ticks);
+        if (event.phase == TickEvent.Phase.START) {
+            MinecraftServer server = event.getServer();
+            if (server != null) {
+                rescue.tick(server);
             }
         }
     }
 
     @SubscribeEvent
+    public void onLivingFall(LivingFallEvent event) {
+        if (event.getEntity() instanceof ServerPlayer
+                && rescue.catchAtFall((ServerPlayer)event.getEntity())) {
+            event.setDamageMultiplier(0.0F);
+        }
+    }
+
+    @SubscribeEvent
     public void onServerStopping(ServerStoppingEvent event) {
-        tasks.clear();
+        rescue.stop();
     }
 }

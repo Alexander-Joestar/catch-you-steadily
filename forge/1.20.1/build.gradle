@@ -8,6 +8,7 @@ base.archivesName = 'catch-you-steadily-forge-1.20.1'
 
 minecraft {
     mappings channel: 'official', version: '1.20.1'
+    accessTransformer = file('src/main/resources/META-INF/accesstransformer.cfg')
     copyIdeResources = true
     runs {
         server { workingDirectory project.file('run'); mods { catch_you_steadily { source sourceSets.main } } }
@@ -20,4 +21,9 @@ sourceSets.main.java.srcDir rootProject.file('common/src/main/java')
 sourceSets.main.java.srcDir rootProject.file('forge/src/main/java')
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+java.sourceCompatibility = JavaVersion.VERSION_1_8
+java.targetCompatibility = JavaVersion.VERSION_1_8
+configurations.named('compileClasspath') {
+    attributes.attribute(org.gradle.api.attributes.java.TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, 17)
+}
 jar { manifest { attributes(['Specification-Title': 'Catch You Steadily', 'Specification-Version': '1', 'Implementation-Version': project.version]) } }

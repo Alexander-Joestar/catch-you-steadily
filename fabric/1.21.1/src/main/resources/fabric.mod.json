@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "name": "Catch You Steadily",
   "environment": "server",
+  "accessWidener": "catch-you-steadily.accesswidener",
   "entrypoints": { "server": ["dev.catchyou.steadily.fabric.CatchYouFabric"] },
   "depends": {
     "fabricloader": ">=0.16.10",

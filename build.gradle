@@ -1,3 +1,72 @@
 plugins {
     id 'base'
 }
+
+def windowsHost = System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows')
+def legacyWrapper = file(windowsHost ? 'legacy/gradlew.bat' : 'legacy/gradlew')
+def localJbr25 = file("${System.getProperty('user.home')}/.jdks/jbr-25.0.4.1-1")
+def legacyJavaHome = System.getenv('LEGACY_JAVA_HOME')
+if (legacyJavaHome == null && localJbr25.isDirectory()) {
+    legacyJavaHome = localJbr25.absolutePath
+}
+
+def archiveTree = { String projectPath, String taskName ->
+    project(projectPath).tasks.named(taskName).flatMap { it.archiveFile }.map { zipTree(it.asFile) }
+}
+def legacyArchiveTree = { String relativePath ->
+    providers.provider { file(relativePath) }.map { zipTree(it) }
+}
+
+tasks.register('buildLegacyVariants', Exec) {
+    group = 'build'
+    description = 'Builds both legacy variants with the legacy Gradle wrapper.'
+    workingDir = file('legacy')
+    if (legacyJavaHome != null) {
+        environment 'JAVA_HOME', legacyJavaHome
+        environment 'PATH', "${new File(legacyJavaHome, 'bin').absolutePath}${File.pathSeparator}${System.getenv('PATH')}"
+    }
+    if (windowsHost) {
+        commandLine 'cmd.exe', '/d', '/c', 'gradlew.bat', ':forge1122:build', ':forge1710:build', '--console=plain'
+    } else {
+        commandLine legacyWrapper, ':forge1122:build', ':forge1710:build', '--console=plain'
+    }
+}
+
+tasks.register('universalJar', Jar) {
+    group = 'build'
+    description = 'Builds and assembles the supported loader and Minecraft variants into one jar.'
+    archiveBaseName = 'catch-you-steadily'
+    archiveVersion = findProperty('mod_version')
+    archiveClassifier = 'universal'
+    destinationDirectory = layout.buildDirectory.dir('libs')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest {
+        attributes('FMLAT': 'accesstransformer.cfg', 'Implementation-Version': findProperty('mod_version'))
+    }
+    dependsOn ':common:jar', ':fabric1201:build', ':fabric1211:build', ':forge1201:build', ':neoforge1211:build', 'buildLegacyVariants'
+
+    from(archiveTree(':common', 'jar')) {
+        exclude 'META-INF/MANIFEST.MF', 'universal/**'
+    }
+    from(archiveTree(':fabric1201', 'remapJar')) {
+        exclude 'META-INF/MANIFEST.MF', 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA', 'fabric.mod.json'
+    }
+    from(archiveTree(':fabric1211', 'remapJar')) {
+        exclude 'META-INF/MANIFEST.MF', 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA', 'fabric.mod.json'
+    }
+    from(archiveTree(':forge1201', 'jar')) {
+        exclude 'META-INF/MANIFEST.MF', 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA'
+    }
+    from(archiveTree(':neoforge1211', 'jar')) {
+        exclude 'META-INF/MANIFEST.MF', 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA'
+    }
+    from(legacyArchiveTree('legacy/forge1122/build/libs/catch-you-steadily-forge-1.12.2-0.1.0.jar')) {
+        exclude 'META-INF/MANIFEST.MF', 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA'
+    }
+    from(legacyArchiveTree('legacy/forge1710/build/libs/catch-you-steadily-forge-1.7.10-0.1.0.jar')) {
+        exclude 'META-INF/MANIFEST.MF', 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA'
+    }
+    from('common/universal') {
+        include 'fabric.mod.json'
+    }
+}
